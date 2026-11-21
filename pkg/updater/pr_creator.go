@@ -72,7 +72,7 @@ func (c *DefaultPRCreator) CreatePR(ctx context.Context, updates []*Update) erro
 	}
 
 	// Create pull request
-	title := "Update GitHub Actions dependencies"
+	title := "chore(deps): update GitHub Actions dependencies"
 	body := c.generatePRBody(updates)
 
 	pr, _, err := c.client.PullRequests.Create(ctx, c.owner, c.repo, &github.NewPullRequest{
@@ -130,11 +130,11 @@ func (c *DefaultPRCreator) formatActionReference(update *Update) string {
 	// Add the action reference with hash
 	// Handle multi-part action names correctly (e.g., github/codeql-action/init)
 	actionFullName := update.Action.Owner + "/" + update.Action.Name
-	sb.WriteString(fmt.Sprintf("%s@%s", actionFullName, update.NewHash))
+	sb.WriteString(actionFullName + "@" + update.NewHash)
 
 	// Add current version comment
 	if update.NewVersion != "" {
-		sb.WriteString(fmt.Sprintf("  # %s", update.NewVersion))
+		sb.WriteString("  # " + update.NewVersion)
 	}
 
 	return sb.String()
@@ -290,7 +290,7 @@ func (c *DefaultPRCreator) generateCommitMessage(updates []*Update) string {
 	var sb strings.Builder
 	sb.WriteString("Update GitHub Actions dependencies\n\n")
 	for _, update := range updates {
-		sb.WriteString(fmt.Sprintf("* %s\n", update.Description))
+		sb.WriteString("* " + update.Description + "\n")
 	}
 	return sb.String()
 }
@@ -303,11 +303,11 @@ func (c *DefaultPRCreator) generatePRBody(updates []*Update) string {
 	for _, update := range updates {
 		// Handle multi-part action names correctly (e.g., github/codeql-action/init)
 		actionFullName := update.Action.Owner + "/" + update.Action.Name
-		sb.WriteString(fmt.Sprintf("* `%s`\n", actionFullName))
-		sb.WriteString(fmt.Sprintf("  * From: %s (%s)\n", update.OldVersion, update.OldHash))
-		sb.WriteString(fmt.Sprintf("  * To: %s (%s)\n", update.NewVersion, update.NewHash))
+		fmt.Fprintf(&sb, "* `%s`\n", actionFullName)
+		fmt.Fprintf(&sb, "  * From: %s (%s)\n", update.OldVersion, update.OldHash)
+		fmt.Fprintf(&sb, "  * To: %s (%s)\n", update.NewVersion, update.NewHash)
 		if update.OriginalVersion != "" && update.OriginalVersion != update.OldVersion {
-			sb.WriteString(fmt.Sprintf("  * Original version: %s\n", update.OriginalVersion))
+			fmt.Fprintf(&sb, "  * Original version: %s\n", update.OriginalVersion)
 		}
 		sb.WriteString("\n")
 	}
