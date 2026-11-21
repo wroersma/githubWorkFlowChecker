@@ -78,7 +78,7 @@ install-lint-tool:
 install-security-tools:
 	@$(GO) install github.com/securego/gosec/v2/cmd/gosec@v2.30.0
 	@$(GO) install golang.org/x/vuln/cmd/govulncheck@v1.10.0
-	@$(GO) install github.com/google/osv-scanner/v2/cmd/osv-scanner@v2.7.1
+	@GOTOOLCHAIN=go1.27.4 $(GO) install github.com/google/osv-scanner/v2/cmd/osv-scanner@v2.7.1
 
 build: check-versions ## Build the application
 	@echo "Building application..."
