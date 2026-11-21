@@ -136,7 +136,7 @@ func TestMockFileRemoveError(t *testing.T) {
 	origRemove := fileRemove
 
 	// Override file remove to simulate an error
-	fileRemove = func(name string) error {
+	fileRemove = func(_ *os.Root, _ string) error {
 		return errors.New("simulated file remove error")
 	}
 
