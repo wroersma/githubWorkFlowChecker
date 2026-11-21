@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -16,7 +17,7 @@ import (
 var osExit = os.Exit
 
 // fileRemove is used to make the file removal testable
-var fileRemove = os.Remove
+var fileRemove = (*os.Root).Remove
 
 // pathValidator is used to make path validation testable
 var pathValidator = validatePath
@@ -155,21 +156,19 @@ func main() {
 	// Clean the path after validation
 	outputDir = filepath.Clean(outputDir)
 
-	// Create output directory structure using common file utilities
+	// Anchor output operations inside the system's temporary directory.
 	workflowDir := filepath.Join(outputDir, ".github", "workflows")
-	fileOptions := common.FileOptions{
-		BaseDir:    tempDir,
-		CreateDirs: true,
-		Mode:       0750,
-		ValidateOptions: common.PathValidationOptions{
-			AllowNonExistent: true,
-			CheckSymlinks:    true,
-		},
+	workflowRoot, err := openWorkflowRoot(tempDir, workflowDir)
+	if err != nil {
+		fmt.Printf("error creating directories: %v\n", err)
+		SysOutCall()
+		osExit(1)
+		return
 	}
+	defer func() { _ = workflowRoot.Close() }()
 
-	// Create a dummy file to ensure all directories are created
-	dummyFile := filepath.Join(workflowDir, ".gitkeep")
-	if err := common.WriteFileWithOptions(dummyFile, []byte(""), fileOptions); err != nil {
+	const dummyFile = ".gitkeep"
+	if err := writeWorkflowFile(workflowRoot, dummyFile, nil, 0750); err != nil {
 		fmt.Printf("error creating directories: %v\n", err)
 		SysOutCall()
 		osExit(1)
@@ -177,7 +176,7 @@ func main() {
 	}
 
 	// Remove the dummy file
-	if err := fileRemove(dummyFile); err != nil {
+	if err := fileRemove(workflowRoot, dummyFile); err != nil {
 		fmt.Printf(common.ErrCouldNotRemoveDummyFile+"\n", err)
 	}
 
@@ -223,10 +222,10 @@ func main() {
 			Actions: actions,
 		}
 
-		filename := filepath.Join(workflowDir, fmt.Sprintf("workflow-%d.yml", i))
+		filename := fmt.Sprintf("workflow-%d.yml", i)
 
 		// Validate the file path
-		if err := validatePath(outputDir, filename); err != nil {
+		if err := validatePath(outputDir, filepath.Join(workflowDir, filename)); err != nil {
 			fmt.Printf("invalid file path: %v\n", err)
 			SysOutCall()
 			osExit(1)
@@ -242,27 +241,7 @@ func main() {
 			return
 		}
 
-		// Check if the file exists and is read-only
-		if info, err := os.Stat(filename); err == nil {
-			if info.Mode().Perm()&0200 == 0 {
-				fmt.Println("error creating destination file: file exists and is read-only")
-				SysOutCall()
-				osExit(1)
-				return
-			}
-		}
-
-		// Write the file using common file utilities
-		fileOptions := common.FileOptions{
-			BaseDir: outputDir,
-			Mode:    0400,
-			ValidateOptions: common.PathValidationOptions{
-				AllowNonExistent: true,
-				CheckSymlinks:    true,
-			},
-		}
-
-		if err := common.WriteFileWithOptions(filename, []byte(buffer.String()), fileOptions); err != nil {
+		if err := writeWorkflowFile(workflowRoot, filename, []byte(buffer.String()), 0400); err != nil {
 			fmt.Printf("error creating destination file: %v\n", err)
 			SysOutCall()
 			osExit(1)
@@ -276,4 +255,56 @@ func main() {
 
 	fmt.Printf("Generated %d workflow files in %s\n", successCount, workflowDir)
 	SysOutCall()
+}
+
+func openWorkflowRoot(tempDir, workflowDir string) (*os.Root, error) {
+	destination, err := filepath.Abs(workflowDir)
+	if err != nil {
+		return nil, err
+	}
+	relative, err := filepath.Rel(tempDir, destination)
+	if err != nil {
+		return nil, err
+	}
+	tempRoot, err := os.OpenRoot(tempDir)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tempRoot.Close() }()
+
+	if err := tempRoot.MkdirAll(relative, 0750); err != nil {
+		return nil, err
+	}
+	return tempRoot.OpenRoot(relative)
+}
+
+func writeWorkflowFile(root *os.Root, name string, data []byte, mode os.FileMode) (err error) {
+	if info, err := root.Stat(name); err == nil {
+		if info.Mode().Perm()&0200 == 0 {
+			return errors.New("file exists and is read-only")
+		}
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+
+	tempName := name + ".tmp"
+	file, err := root.OpenFile(tempName, os.O_WRONLY|os.O_CREATE|os.O_EXCL, mode)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err != nil {
+			_ = root.Remove(tempName)
+		}
+	}()
+
+	_, writeErr := file.Write(data)
+	closeErr := file.Close()
+	if writeErr != nil {
+		return writeErr
+	}
+	if closeErr != nil {
+		return closeErr
+	}
+	return root.Rename(tempName, name)
 }
