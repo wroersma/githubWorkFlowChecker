@@ -3,6 +3,7 @@ package updater
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -11,6 +12,7 @@ import (
 	"testing"
 	"unicode"
 
+	"github.com/ThreatFlux/githubWorkFlowChecker/pkg/common/testutils"
 	"github.com/google/go-github/v72/github"
 	"golang.org/x/oauth2"
 )
@@ -71,8 +73,26 @@ func TestNewPRCreator(t *testing.T) {
 }
 
 func TestCreatePR(t *testing.T) {
-	server, creator := SetupPRTestServer(t, NormalServer)
-	defer server.Close()
+	const owner, repo = "test-owner", "test-repo"
+	options := testutils.DefaultServerOptions(owner, repo)
+	options.SetupPRs = false
+	fixture := testutils.NewGitHubServerFixture(options)
+	t.Cleanup(fixture.Server.Close)
+	fixture.Mux.HandleFunc("POST /repos/test-owner/test-repo/pulls", func(w http.ResponseWriter, r *http.Request) {
+		var request github.NewPullRequest
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Errorf("Decode PR request: %v", err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		const expected = "chore(deps): update GitHub Actions dependencies"
+		if request.GetTitle() != expected {
+			t.Errorf("PR title = %q, want %q", request.GetTitle(), expected)
+		}
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"number":1}`))
+	})
+	creator := &DefaultPRCreator{client: fixture.Client, owner: owner, repo: repo}
 
 	updates := CreateTestUpdates(1, "actions", "checkout", "v2", "v3", ".github/workflows/test.yml")
 
