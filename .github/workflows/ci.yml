@@ -15,8 +15,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5  # v6.2.0
         with:
-          go-version: '1.25.0'
-          check-latest: true
+          go-version-file: go.mod
 
       - name: Install dependencies
         run: go mod download
@@ -24,11 +23,18 @@ jobs:
       - name: Run linter
         run: make lint
 
-      - name: Run tests with coverage
+      - name: Run unit tests with coverage
+        run: make coverage-unit
+
+      - name: Run live GitHub end-to-end tests
         env:
           GITHUB_TOKEN: ${{ secrets.GIT_TOKEN }}
         run: |
-          make coverage
+          if [[ -z "$GITHUB_TOKEN" ]]; then
+            echo "::notice::Live GitHub tests require the GIT_TOKEN secret."
+          else
+            make test-e2e
+          fi
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@671740ac38dd9b0130fbe1cec585b89eea48d3de  # v5.5.2
@@ -46,8 +52,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5  # v6.2.0
         with:
-          go-version: '1.25.0'
-          check-latest: true
+          go-version-file: go.mod
 
       - name: Run vulnerability checks
         run: make security
@@ -62,8 +67,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5  # v6.2.0
         with:
-          go-version: '1.25.0'
-          check-latest: true
+          go-version-file: go.mod
 
       - name: Build binary
         run: make build

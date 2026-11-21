@@ -327,14 +327,7 @@ func ValidateTokenScopes(ctx context.Context, client *github.Client) error {
 	// We need either 'repo' (full repo access) or 'public_repo' (public repo access only)
 	// and 'workflow' scope for modifying workflow files
 	requiredScopes := []string{"workflow"}
-	hasRepoScope := false
-
-	// Check if we have repo or public_repo scope
-	if strings.Contains(scopesHeader, "repo") || strings.Contains(scopesHeader, "public_repo") {
-		hasRepoScope = true
-	}
-
-	if !hasRepoScope {
+	if !strings.Contains(scopesHeader, "repo") && !strings.Contains(scopesHeader, "public_repo") {
 		return fmt.Errorf(ErrTokenMissingScope, "repo or public_repo")
 	}
 
