@@ -151,11 +151,7 @@ func TestAdvancedTemplateExecution(t *testing.T) {
 	// Set test mode flag to avoid Stdout.Sync errors
 	inTestMode = true
 
-	testDir, err := os.MkdirTemp("", "template-test-*")
-	if err != nil {
-		t.Fatalf("Failed to create test directory: %v", err)
-	}
-	defer os.RemoveAll(testDir)
+	testDir := t.TempDir()
 
 	// Create workflow directory structure with proper permissions
 	workflowDir := filepath.Join(testDir, ".github", "workflows")
@@ -282,12 +278,6 @@ func TestAdvancedWorkflowGeneration(t *testing.T) {
 	// Set test mode flag to avoid Stdout.Sync errors
 	inTestMode = true
 
-	testDir, err := os.MkdirTemp("", "workflow-test-*")
-	if err != nil {
-		t.Fatalf("Failed to create test directory: %v", err)
-	}
-	defer os.RemoveAll(testDir)
-
 	tests := []struct {
 		name          string
 		workflowCount int
@@ -384,11 +374,7 @@ func TestAdvancedWorkflowGeneration(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create a new test directory for each test
-			testDir, err := os.MkdirTemp("", "workflow-test-*")
-			if err != nil {
-				t.Fatalf("Failed to create test directory: %v", err)
-			}
-			defer os.RemoveAll(testDir)
+			testDir := t.TempDir()
 
 			if err := tt.setup(testDir); err != nil {
 				t.Fatalf("Failed to setup test: %v", err)
@@ -415,12 +401,6 @@ func TestAdvancedWorkflowGeneration(t *testing.T) {
 func TestFileOperationErrors(t *testing.T) {
 	// Set test mode flag to avoid Stdout.Sync errors
 	inTestMode = true
-
-	testDir, err := os.MkdirTemp("", "file-test-*")
-	if err != nil {
-		t.Fatalf("Failed to create test directory: %v", err)
-	}
-	defer os.RemoveAll(testDir)
 
 	tests := []struct {
 		name     string
@@ -477,11 +457,13 @@ func TestFileOperationErrors(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create a new test directory for each test
-			testDir, err := os.MkdirTemp("", "generate-test-*")
-			if err != nil {
-				t.Fatalf("Failed to create test directory: %v", err)
-			}
-			defer os.RemoveAll(testDir)
+			testDir := t.TempDir()
+			t.Cleanup(func() {
+				parent := filepath.Join(testDir, ".github")
+				if err := os.Chmod(parent, 0750); err != nil && !os.IsNotExist(err) {
+					t.Errorf("Restore test directory permissions: %v", err)
+				}
+			})
 
 			// Setup the test case
 			if err := tt.setup(testDir); err != nil {
