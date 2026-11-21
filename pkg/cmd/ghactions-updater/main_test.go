@@ -766,8 +766,7 @@ jobs:
 			// Set up environment
 			os.Args = tt.args
 			for k, v := range tt.envVars {
-				os.Setenv(k, v)
-				defer os.Unsetenv(k)
+				t.Setenv(k, v)
 			}
 
 			// Set up mocks
