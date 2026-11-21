@@ -199,11 +199,12 @@ func TestRunTableTests_ErrorHandling(t *testing.T) {
 			testFunc := func(testCase TestCase) (string, error) {
 				input, _ := testCase.Input.(string)
 
-				if input == "trigger error" {
+				switch input {
+				case "trigger error":
 					return "", errors.New("triggered error")
-				} else if input == "trigger different error" {
+				case "trigger different error":
 					return "", errors.New("different error")
-				} else if input == "unexpected error" {
+				case "unexpected error":
 					return "", errors.New("oops")
 				}
 
