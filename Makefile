@@ -1,5 +1,5 @@
 # Required versions
-REQUIRED_GO_VERSION = 1.25.0
+REQUIRED_GO_VERSION = $(shell sed -n 's/^go //p' go.mod)
 REQUIRED_DOCKER_VERSION = 24.0.0
 
 # Tool paths and versions
@@ -7,6 +7,7 @@ GO ?= go
 GOLANGCI_LINT ?= golangci-lint
 GOSEC ?= gosec
 GOVULNCHECK ?= govulncheck
+OSV_SCANNER ?= osv-scanner
 DOCKER ?= docker
 COSIGN ?= cosign
 SYFT ?= syft
@@ -25,6 +26,7 @@ LINT_FLAGS ?= run --timeout=5m
 # Coverage output paths
 COVERAGE_PROFILE = coverage.out
 COVERAGE_HTML = coverage.html
+UNIT_PACKAGES = $(shell $(GO) list ./pkg/... | grep -v '/pkg/test/e2e$$')
 
 # Binary information
 BINARY_NAME = ghactions-updater
@@ -37,15 +39,15 @@ DOCKER_TAG ?= $(VERSION)
 DOCKER_LATEST = $(DOCKER_IMAGE):latest
 DOCKER_DEV_IMAGE = $(DOCKER_REGISTRY)/go-dev
 
-.PHONY: all build test lint clean docker-build check-versions check-github-token install-tools security help version-info coverage dupl-check docker-push docker-sign docker-verify install docker-run fmt docker-test docker-tests docker-dev-build docker-fmt docker-lint docker-security docker-coverage docker-dupl-check docker-all docker-shell
+.PHONY: all build test test-e2e lint clean docker-build check-versions check-github-token install-tools install-lint-tool install-security-tools security help version-info coverage coverage-unit coverage-report dupl-check docker-push docker-sign docker-verify install docker-run fmt docker-test docker-tests docker-dev-build docker-fmt docker-lint docker-security docker-coverage docker-dupl-check docker-all docker-shell
 
 # Version check targets
 check-versions: ## Check all required tool versions
 	@echo "Checking required tool versions..."
 	@echo "Checking Go version..."
-	@$(GO) version | grep -q "go$(REQUIRED_GO_VERSION)" || (echo "Error: Required Go version $(REQUIRED_GO_VERSION) not found" && exit 1)
+	@$(GO) list -m >/dev/null
 	@echo "Checking Docker version..."
-@$(DOCKER) --version | grep -q "$(REQUIRED_DOCKER_VERSION)" || (echo "Warning: Recommended Docker version $(REQUIRED_DOCKER_VERSION) not found")
+	@$(DOCKER) --version | grep -q "$(REQUIRED_DOCKER_VERSION)" || (echo "Warning: Recommended Docker version $(REQUIRED_DOCKER_VERSION) not found")
 	@echo "All version checks completed"
 
 check-github-token: ## Validate GitHub token
@@ -65,15 +67,18 @@ check-github-token: ## Validate GitHub token
 		 exit 1)
 
 # Install required tools
-install-tools: ## Install required Go tools
-	@echo "Installing security and linting tools..."
-	@go install github.com/securego/gosec/v2/cmd/gosec@latest
-	@go install golang.org/x/vuln/cmd/govulncheck@latest
-	@go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
-	@go install github.com/sonatype-nexus-community/nancy@latest
-	@go install github.com/sigstore/cosign/cmd/cosign@latest
-	@go install github.com/anchore/syft/cmd/syft@latest
-	@go install github.com/mibk/dupl@latest
+install-tools: install-lint-tool install-security-tools ## Install required Go tools
+	@$(GO) install github.com/sigstore/cosign/v2/cmd/cosign@v2.6.5
+	@$(GO) install github.com/anchore/syft/cmd/syft@v1.57.2
+	@$(GO) install github.com/mibk/dupl@v1.1.0
+
+install-lint-tool:
+	@$(GO) install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.15.0
+
+install-security-tools:
+	@$(GO) install github.com/securego/gosec/v2/cmd/gosec@v2.30.0
+	@$(GO) install golang.org/x/vuln/cmd/govulncheck@v1.10.0
+	@GOTOOLCHAIN=go1.27.4 $(GO) install github.com/google/osv-scanner/v2/cmd/osv-scanner@v2.7.1
 
 build: check-versions ## Build the application
 	@echo "Building application..."
@@ -86,7 +91,7 @@ fmt: ## Format Go source files
 	@echo "Formatting Go files..."
 	@find pkg -name "*.go" -type f -exec $(GO) fmt {} \;
 
-lint: install-tools ## Run golangci-lint for code analysis
+lint: install-lint-tool ## Run golangci-lint for code analysis
 	@echo "Running linters..."
 	$(GOLANGCI_LINT) $(LINT_FLAGS) ./...
 
@@ -101,6 +106,16 @@ coverage: check-github-token ## Generate test coverage report
 	@echo "Configuring Git to use SSH for GitHub operations..."
 	@git config url."git@github.com:".insteadOf "https://github.com/" 2>/dev/null || true
 	@$(GO) test -coverprofile=$(COVERAGE_PROFILE) ./pkg/...
+	@$(MAKE) coverage-report
+
+coverage-unit: ## Generate coverage without GitHub integration credentials
+	@$(GO) test -coverprofile=$(COVERAGE_PROFILE) $(UNIT_PACKAGES)
+	@$(MAKE) coverage-report
+
+test-e2e: check-github-token ## Run the live GitHub end-to-end tests
+	@$(GO) test $(TEST_FLAGS) ./pkg/test/e2e
+
+coverage-report:
 	@$(GO) tool cover -html=$(COVERAGE_PROFILE) -o $(COVERAGE_HTML)
 	@$(GO) tool cover -func=$(COVERAGE_PROFILE)
 
@@ -109,11 +124,11 @@ dupl-check: install-tools ## Check for duplicate code
 	@$(DUPL) -t 75 -plumbing -verbose ./pkg/
 	@echo "Duplicate code check completed"
 
-security: install-tools ## Run security scans
+security: install-security-tools ## Run security scans
 	@echo "Running security scans..."
 	@$(GOSEC) ./...
 	@$(GOVULNCHECK) ./...
-	@go list -json -deps ./... | nancy sleuth
+	@$(OSV_SCANNER) scan source --lockfile=go.mod --no-call-analysis=go
 
 docker-build: check-versions ## Build Docker image
 	@echo "Building Docker image..."
